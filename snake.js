@@ -1,23 +1,27 @@
 'use strict';
 
-var GRID_WIDTH = 40;
-var SNAKE_CELL = 1;
-var FOOD_CELL = 2;
-var UP = {x: 0, y: -1};
-var DOWN = {x: 0, y: 1};
-var LEFT = {x: -1, y: 0};
-var RIGHT = {x: 1, y: 0};
-var INITIAL_SNAKE_LENGTH = 4;
-var BRAILLE_SPACE = '\u2800';
+const GRID_WIDTH = 40;
+const SNAKE_CELL = 1;
+const FOOD_CELL = 2;
+const UP = {x: 0, y: -1};
+const DOWN = {x: 0, y: 1};
+const LEFT = {x: -1, y: 0};
+const RIGHT = {x: 1, y: 0};
+const INITIAL_SNAKE_LENGTH = 4;
+const BRAILLE_SPACE = '\u2800';
+const GRID_SIZE = GRID_WIDTH * 4;
 
-var grid;
-var snake;
-var currentDirection;
-var moveQueue;
-var hasMoved;
-var gamePaused = false;
-var urlRevealed = false;
-var whitespaceReplacementChar;
+let grid, snake, currentDirection, moveQueue, hasMoved, gamePaused = false, urlRevealed = false, whitespaceReplacementChar;
+
+const directionsByKey = {
+  37: LEFT, 38: UP, 39: RIGHT, 40: DOWN,
+  87: UP, 65: LEFT, 83: DOWN, 68: RIGHT,
+  75: UP, 72: LEFT, 74: DOWN, 76: RIGHT
+};
+
+const touchDirs = {up: UP, down: DOWN, left: LEFT, right: RIGHT};
+
+const $ = document.querySelector.bind(document);
 
 function main() {
   detectBrowserUrlWhitespaceEscaping();
@@ -27,25 +31,24 @@ function main() {
   initUrlRevealed();
   startGame();
 
-  var lastFrameTime = Date.now();
-  window.requestAnimationFrame(function frameHandler() {
-    var now = Date.now();
+  let lastFrameTime = Date.now();
+  function frameHandler() {
+    const now = Date.now();
     if (!gamePaused && now - lastFrameTime >= tickTime()) {
       updateWorld();
       drawWorld();
       lastFrameTime = now;
     }
-    window.requestAnimationFrame(frameHandler);
-  });
+    requestAnimationFrame(frameHandler);
+  }
+  requestAnimationFrame(frameHandler);
 }
 
 function detectBrowserUrlWhitespaceEscaping() {
-  // Write two Braille whitespace characters to the hash because Firefox doesn't
-  // escape single WS chars between words.
-  history.replaceState(null, null, '#' + BRAILLE_SPACE + BRAILLE_SPACE)
-  if (location.hash.indexOf(BRAILLE_SPACE) == -1) {
-    console.warn('Browser is escaping whitespace characters on URL')
-    var replacementData = pickWhitespaceReplacementChar();
+  history.replaceState(null, null, `#${BRAILLE_SPACE}${BRAILLE_SPACE}`);
+  if (location.hash.indexOf(BRAILLE_SPACE) === -1) {
+    console.warn('Browser is escaping whitespace characters on URL');
+    const replacementData = pickWhitespaceReplacementChar();
     whitespaceReplacementChar = replacementData[0];
     $('#url-escaping-note').classList.remove('invisible');
     $('#replacement-char-description').textContent = replacementData[1];
@@ -53,65 +56,48 @@ function detectBrowserUrlWhitespaceEscaping() {
 }
 
 function cleanUrl() {
-  // In order to have the most space for the game, shown on the URL hash,
-  // remove all query string parameters and trailing / from the URL.
   history.replaceState(null, null, location.pathname.replace(/\b\/$/, ''));
 }
 
 function setupEventHandlers() {
-  var directionsByKey = {
-    // Arrows
-    37: LEFT, 38: UP, 39: RIGHT, 40: DOWN,
-    // WASD
-    87: UP, 65: LEFT, 83: DOWN, 68: RIGHT,
-    // hjkl
-    75: UP, 72: LEFT, 74: DOWN, 76: RIGHT
-  };
-
-  document.onkeydown = function (event) {
-    var key = event.keyCode;
-    if (key in directionsByKey) {
+  document.onkeydown = (event) => {
+    const key = event.keyCode;
+    if (directionsByKey[key]) {
       changeDirection(directionsByKey[key]);
     }
   };
 
-  // Use touchstart instead of mousedown because these arrows are only shown on
-  // touch devices, and also because there is a delay between touchstart and
-  // mousedown on those devices, and the game should respond ASAP.
-  $('#up').ontouchstart = function () { changeDirection(UP) };
-  $('#down').ontouchstart = function () { changeDirection(DOWN) };
-  $('#left').ontouchstart = function () { changeDirection(LEFT) };
-  $('#right').ontouchstart = function () { changeDirection(RIGHT) };
+  Object.entries(touchDirs).forEach(([dir, dirObj]) => {
+    $(`#${dir}`).ontouchstart = () => changeDirection(dirObj);
+  });
 
-  window.onblur = function pauseGame() {
+  window.onblur = () => {
     gamePaused = true;
-    window.history.replaceState(null, null, location.hash + '[paused]');
+    history.replaceState(null, null, location.hash + '[paused]');
   };
 
-  window.onfocus = function unpauseGame() {
+  window.onfocus = () => {
     gamePaused = false;
     drawWorld();
   };
 
-  $('#reveal-url').onclick = function (e) {
+  $('#reveal-url').onclick = (e) => {
     e.preventDefault();
     setUrlRevealed(!urlRevealed);
   };
 
-  document.querySelectorAll('.expandable').forEach(function (expandable) {
-    var expand = expandable.querySelector('.expand-btn');
-    var collapse = expandable.querySelector('.collapse-btn');
-    var content = expandable.querySelector('.expandable-content');
-    expand.onclick = collapse.onclick = function () {
+  document.querySelectorAll('.expandable').forEach(expandable => {
+    const expand = expandable.querySelector('.expand-btn');
+    const collapse = expandable.querySelector('.collapse-btn');
+    const content = expandable.querySelector('.expandable-content');
+    const toggle = () => {
       expand.classList.remove('hidden');
       content.classList.remove('hidden');
       expandable.classList.toggle('expanded');
     };
-    // Hide the expand button or the content when the animation ends so those
-    // elements are not interactive anymore.
-    // Surely there's a way to do this with CSS animations more directly.
-    expandable.ontransitionend = function () {
-      var expanded = expandable.classList.contains('expanded');
+    expand.onclick = collapse.onclick = toggle;
+    expandable.ontransitionend = () => {
+      const expanded = expandable.classList.contains('expanded');
       expand.classList.toggle('hidden', expanded);
       content.classList.toggle('hidden', !expanded);
     };
@@ -122,9 +108,6 @@ function initUrlRevealed() {
   setUrlRevealed(Boolean(localStorage.urlRevealed));
 }
 
-// Some browsers don't display the page URL, either partially (e.g. Safari) or
-// entirely (e.g. mobile in-app web-views). To make the game playable in such
-// cases, the player can choose to "reveal" the URL within the page body.
 function setUrlRevealed(value) {
   urlRevealed = value;
   $('#url-container').classList.toggle('invisible', !urlRevealed);
@@ -136,11 +119,11 @@ function setUrlRevealed(value) {
 }
 
 function startGame() {
-  grid = new Array(GRID_WIDTH * 4);
+  grid = new Array(GRID_SIZE);
   snake = [];
-  for (var x = 0; x < INITIAL_SNAKE_LENGTH; x++) {
-    var y = 2;
-    snake.unshift({x: x, y: y});
+  for (let x = 0; x < INITIAL_SNAKE_LENGTH; x++) {
+    const y = 2;
+    snake.unshift({x, y});
     setCellAt(x, y, SNAKE_CELL);
   }
   currentDirection = RIGHT;
@@ -150,18 +133,15 @@ function startGame() {
 }
 
 function updateWorld() {
-  if (moveQueue.length) {
-    currentDirection = moveQueue.pop();
-  }
+  if (moveQueue.length) currentDirection = moveQueue.pop();
 
-  var head = snake[0];
-  var tail = snake[snake.length - 1];
-  var newX = head.x + currentDirection.x;
-  var newY = head.y + currentDirection.y;
+  const head = snake[0];
+  const tail = snake[snake.length - 1];
+  let newX = head.x + currentDirection.x;
+  let newY = head.y + currentDirection.y;
 
-  var outOfBounds = newX < 0 || newX >= GRID_WIDTH || newY < 0 || newY >= 4;
-  var collidesWithSelf = cellAt(newX, newY) === SNAKE_CELL
-    && !(newX === tail.x && newY === tail.y);
+  const outOfBounds = newX < 0 || newX >= GRID_WIDTH || newY < 0 || newY >= 4;
+  const collidesWithSelf = cellAt(newX, newY) === SNAKE_CELL && !(newX === tail.x && newY === tail.y);
 
   if (outOfBounds || collidesWithSelf) {
     endGame();
@@ -169,24 +149,21 @@ function updateWorld() {
     return;
   }
 
-  var eatsFood = cellAt(newX, newY) === FOOD_CELL;
+  const eatsFood = cellAt(newX, newY) === FOOD_CELL;
   if (!eatsFood) {
     snake.pop();
     setCellAt(tail.x, tail.y, null);
   }
 
-  // Advance head after tail so it can occupy the same cell on next tick.
   setCellAt(newX, newY, SNAKE_CELL);
   snake.unshift({x: newX, y: newY});
 
-  if (eatsFood) {
-    dropFood();
-  }
+  if (eatsFood) dropFood();
 }
 
 function endGame() {
-  var score = currentScore();
-  var maxScore = parseInt(localStorage.maxScore || 0);
+  const score = currentScore();
+  const maxScore = parseInt(localStorage.maxScore || 0);
   if (score > 0 && score > maxScore && hasMoved) {
     localStorage.maxScore = score;
     localStorage.maxScoreGrid = gridString();
@@ -196,62 +173,50 @@ function endGame() {
 }
 
 function drawWorld() {
-  var hash = '#|' + gridString() + '|[score:' + currentScore() + ']';
+  const score = currentScore();
+  const gridStr = gridString();
+  let hash = `#|${gridStr}|[score:${score}]`;
 
   if (urlRevealed) {
-    // Use the original game representation on the on-DOM view, as there are no
-    // escaping issues there.
     $('#url').textContent = location.href.replace(/#.*$/, '') + hash;
   }
 
-  // Modern browsers escape whitespace characters on the address bar URL for
-  // security reasons. In case this browser does that, replace the empty Braille
-  // character with a non-whitespace (and hopefully non-intrusive) symbol.
   if (whitespaceReplacementChar) {
     hash = hash.replace(/\u2800/g, whitespaceReplacementChar);
   }
 
   history.replaceState(null, null, hash);
 
-  // Some browsers have a rate limit on history.replaceState() calls, resulting
-  // in the URL not updating at all for a couple of seconds. In those cases,
-  // location.hash is updated directly, which is unfortunate, as it causes a new
-  // navigation entry to be created each time, effectively hijacking the user's
-  // back button.
   if (decodeURIComponent(location.hash) !== hash) {
-    console.warn(
-      'history.replaceState() throttling detected. Using location.hash fallback'
-    );
+    console.warn('history.replaceState() throttling detected. Using location.hash fallback');
     location.hash = hash;
   }
 }
 
 function gridString() {
-  var str = '';
-  for (var x = 0; x < GRID_WIDTH; x += 2) {
-    // Unicode Braille patterns are 256 code points going from 0x2800 to 0x28FF.
-    // They follow a binary pattern where the bits are, from least significant
-    // to most: ⠁⠂⠄⠈⠐⠠⡀⢀
-    // So, for example, 147 (10010011) corresponds to ⢓
-    var n = 0
-      | bitAt(x, 0) << 0
-      | bitAt(x, 1) << 1
-      | bitAt(x, 2) << 2
-      | bitAt(x + 1, 0) << 3
-      | bitAt(x + 1, 1) << 4
-      | bitAt(x + 1, 2) << 5
-      | bitAt(x, 3) << 6
-      | bitAt(x + 1, 3) << 7;
-    str += String.fromCharCode(0x2800 + n);
+  let str = '';
+  const base = 0x2800;
+  for (let x = 0; x < GRID_WIDTH; x += 2) {
+    const idx0 = x + 0 * GRID_WIDTH;
+    const idx1 = x + 1 + 0 * GRID_WIDTH;
+    const idx2 = x + 2 * GRID_WIDTH;
+    const idx3 = x + 1 + 2 * GRID_WIDTH;
+    let n = 0
+      | (grid[idx0] ? 1 : 0)
+      | ((grid[idx0 + GRID_WIDTH] ? 1 : 0) << 1)
+      | ((grid[idx2] ? 1 : 0) << 2)
+      | (grid[idx1] ? 1 : 0) << 3
+      | ((grid[idx1 + GRID_WIDTH] ? 1 : 0) << 4)
+      | ((grid[idx3] ? 1 : 0) << 5)
+      | ((grid[idx0 + 3 * GRID_WIDTH] ? 1 : 0) << 6)
+      | ((grid[idx3 + GRID_WIDTH] ? 1 : 0) << 7);  // 修正: idx3 + GRID_WIDTH は y=3 の x+1
+    str += String.fromCharCode(base + n);
   }
   return str;
 }
 
 function tickTime() {
-  // Game speed increases as snake grows.
-  var start = 125;
-  var end = 75;
-  return start + snake.length * (end - start) / grid.length;
+  return 125 + snake.length * (75 - 125) / GRID_SIZE;
 }
 
 function currentScore() {
@@ -259,7 +224,9 @@ function currentScore() {
 }
 
 function cellAt(x, y) {
-  return grid[x % GRID_WIDTH + y * GRID_WIDTH];
+  x = x % GRID_WIDTH;
+  if (x < 0) x += GRID_WIDTH;
+  return grid[x + y * GRID_WIDTH];
 }
 
 function bitAt(x, y) {
@@ -267,140 +234,125 @@ function bitAt(x, y) {
 }
 
 function setCellAt(x, y, cellType) {
-  grid[x % GRID_WIDTH + y * GRID_WIDTH] = cellType;
+  x = x % GRID_WIDTH;
+  if (x < 0) x += GRID_WIDTH;
+  grid[x + y * GRID_WIDTH] = cellType;
 }
 
 function dropFood() {
-  var emptyCells = grid.length - snake.length;
-  if (emptyCells === 0) {
-    return;
-  }
-  var dropCounter = Math.floor(Math.random() * emptyCells);
-  for (var i = 0; i < grid.length; i++) {
-    if (grid[i] === SNAKE_CELL) {
-      continue;
-    }
-    if (dropCounter === 0) {
+  const emptyCells = GRID_SIZE - snake.length;
+  if (emptyCells === 0) return;
+
+  let attempts = 0;
+  const maxAttempts = GRID_SIZE * 2;  // 確率的探索で高速化
+  while (attempts < maxAttempts) {
+    const i = Math.floor(Math.random() * GRID_SIZE);
+    if (grid[i] !== SNAKE_CELL) {
       grid[i] = FOOD_CELL;
-      break;
+      return;
     }
-    dropCounter--;
+    attempts++;
+  }
+  // フォールバック: 線形検索（稀）
+  let dropCounter = Math.floor(Math.random() * emptyCells);
+  for (let i = 0; i < GRID_SIZE; i++) {
+    if (grid[i] !== SNAKE_CELL) {
+      if (dropCounter === 0) {
+        grid[i] = FOOD_CELL;
+        return;
+      }
+      dropCounter--;
+    }
   }
 }
 
 function changeDirection(newDir) {
-  var lastDir = moveQueue[0] || currentDirection;
-  var opposite = newDir.x + lastDir.x === 0 && newDir.y + lastDir.y === 0;
-  if (!opposite) {
-    // Process moves in a queue to prevent multiple direction changes per tick.
+  const lastDir = moveQueue[0] || currentDirection;
+  if (newDir.x + lastDir.x !== 0 || newDir.y + lastDir.y !== 0) {
     moveQueue.unshift(newDir);
   }
   hasMoved = true;
 }
 
 function drawMaxScore() {
-  var maxScore = localStorage.maxScore;
-  if (maxScore == null) {
-    return;
-  }
+  const maxScore = localStorage.maxScore;
+  if (maxScore == null) return;
 
-  var maxScorePoints = maxScore == 1 ? '1 point' : maxScore + ' points'
-  var maxScoreGrid = localStorage.maxScoreGrid;
+  const maxScorePoints = maxScore === 1 ? '1 point' : `${maxScore} points`;
+  const maxScoreGrid = localStorage.maxScoreGrid;
 
   $('#max-score-points').textContent = maxScorePoints;
   $('#max-score-grid').textContent = maxScoreGrid;
   $('#max-score-container').classList.remove('hidden');
 
-  $('#share').onclick = function (e) {
+  $('#share').onclick = (e) => {
     e.preventDefault();
     shareScore(maxScorePoints, maxScoreGrid);
   };
 }
 
-// Expands the high score details if collapsed. Only done when beating the
-// highest score, to grab the player's attention.
 function showMaxScore() {
-  if ($('#max-score-container.expanded')) return
-  $('#max-score-container .expand-btn').click();
+  const container = $('#max-score-container');
+  if (container && container.classList.contains('expanded')) return;
+  const expandBtn = container?.querySelector('.expand-btn');
+  if (expandBtn) expandBtn.click();
 }
 
 function shareScore(scorePoints, grid) {
-  var message = '|' + grid + '| Got ' + scorePoints +
-    ' playing this stupid snake game on the browser URL!';
-  var url = $('link[rel=canonical]').href;
+  const message = `|${grid}| Got ${scorePoints} playing this stupid snake game on the browser URL!`;
+  const url = $('link[rel=canonical]').href;
   if (navigator.share) {
-    navigator.share({text: message, url: url});
+    navigator.share({text: message, url});
   } else {
-    navigator.clipboard.writeText(message + '\n' + url)
-      .then(function () { showShareNote('copied to clipboard') })
-      .catch(function () { showShareNote('clipboard write failed') })
+    navigator.clipboard.writeText(`${message}\n${url}`)
+      .then(() => showShareNote('copied to clipboard'))
+      .catch(() => showShareNote('clipboard write failed'));
   }
 }
 
 function showShareNote(message) {
-  var note = $("#share-note");
-  note.textContent = message;
-  note.classList.remove("invisible");
-  setTimeout(function () { note.classList.add("invisible") }, 1000);
+  const note = $('#share-note');
+  if (note) {
+    note.textContent = message;
+    note.classList.remove('invisible');
+    setTimeout(() => note.classList.add('invisible'), 1000);
+  }
 }
 
-// Super hacky function to pick a suitable character to replace the empty
-// Braille character (u+2800) when the browser escapes whitespace on the URL.
-// We want to pick a character that's close in width to the empty Braille symbol
-// —so the game doesn't stutter horizontally—, and also pick something that's
-// not too visually noisy. So we actually measure how wide and how "dark" some
-// candidate characters are when rendered by the browser (using a canvas) and
-// pick the first that passes both criteria.
 function pickWhitespaceReplacementChar() {
-  var candidates = [
-    // U+0ADF is part of the Gujarati Unicode blocks, but it doesn't have an
-    // associated glyph. For some reason, Chrome renders is as totally blank and
-    // almost the same size as the Braille empty character, but it doesn't
-    // escape it on the address bar URL, so this is the perfect replacement
-    // character. This behavior of Chrome is probably a bug, and might be
-    // changed at any time, and in other browsers like Firefox this character is
-    // rendered with an ugly "undefined" glyph, so it'll get filtered out by the
-    // width or the "blankness" check in either of those cases.
-    ['૟', 'strange symbols'],
-    // U+27CB Mathematical Rising Diagonal, not a great replacement for
-    // whitespace, but is close to the correct size and blank enough.
-    ['⟋', 'some weird slashes']
+  const candidates = [
+    ['\u0ADF', 'strange symbols'],
+    ['\u27CB', 'some weird slashes']
   ];
 
-  var N = 5;
-  var canvas = document.createElement('canvas');
-  var ctx = canvas.getContext('2d');
+  const N = 5;
+  const canvas = document.createElement('canvas');
+  canvas.width = 200;  // 固定サイズで軽量化
+  canvas.height = 40;
+  const ctx = canvas.getContext('2d');
   ctx.font = '30px system-ui';
-  var targetWidth = ctx.measureText(BRAILLE_SPACE.repeat(N)).width;
+  const targetWidth = ctx.measureText(BRAILLE_SPACE.repeat(N)).width;
 
-  for (var i = 0; i < candidates.length; i++) {
-    var char = candidates[i][0];
-    var str = char.repeat(N);
-    var width = ctx.measureText(str).width;
-    var similarWidth = Math.abs(targetWidth - width) / targetWidth <= 0.1;
+  for (const [char, desc] of candidates) {
+    const str = char.repeat(N);
+    const width = ctx.measureText(str).width;
+    if (Math.abs(targetWidth - width) / targetWidth > 0.1) continue;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, 200, 40);
     ctx.fillText(str, 0, 30);
-    var pixelData = ctx.getImageData(0, 0, width, 30).data;
-    var totalPixels = pixelData.length / 4;
-    var coloredPixels = 0;
-    for (var j = 0; j < totalPixels; j++) {
-      var alpha = pixelData[j * 4 + 3];
-      if (alpha != 0) {
-        coloredPixels++;
-      }
+    const imageData = ctx.getImageData(0, 0, 200, 40);
+    const pixelData = imageData.data;
+    const totalPixels = (200 * 40) / 4;  // 固定ピクセル数
+    let coloredPixels = 0;
+    for (let j = 0; j < totalPixels * 4; j += 4) {
+      if (pixelData[j + 3] > 0) coloredPixels++;
     }
-    var notTooDark = coloredPixels / totalPixels < 0.15;
-
-    if (similarWidth && notTooDark) {
-      return candidates[i];
+    if (coloredPixels / totalPixels < 0.15) {
+      return [char, desc];
     }
   }
 
-  // Fallback to a safe U+2591 Light Shade.
-  return ['░', 'some kind of "fog"'];
+  return ['\u2591', 'some kind of "fog"'];
 }
-
-var $ = document.querySelector.bind(document);
 
 main();
